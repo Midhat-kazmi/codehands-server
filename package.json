@@ -2,6 +2,9 @@
   "name": "codehands-server",
   "version": "1.0.0",
      "type": "module",
+     "bin": {
+  "codehands": "./bin/codehands.js"
+},
   "main": "index.js",
     "scripts": {
      "dev": "tsx watch src/server.ts",
