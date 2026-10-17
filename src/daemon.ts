@@ -10,15 +10,21 @@ if (!deviceId || !token) {
   process.exit(1);
 }
 
+// When each event was sent (on this laptop's clock), keyed by event ID
+const sentAt = new Map<string, number>();
+
 // Pretend to run a task by sending fake events
 function runMockTask(ws: WebSocket, sessionId: string) {
   const sendEvent = (eventType: string) => {
+    const clientEventId = crypto.randomUUID();
+    sentAt.set(clientEventId, performance.now());
     console.log("sending event", eventType);
     ws.send(
       JSON.stringify({
         type: "event",
         sessionId,
         eventType,
+        clientEventId,
         payload: {},
         deviceTs: new Date().toISOString(),
       })
@@ -40,6 +46,16 @@ function connect() {
 
   ws.on("message", (data) => {
     const msg = JSON.parse(data.toString());
+
+    if (msg.type === "event_ack") {
+      const start = sentAt.get(msg.clientEventId);
+      if (start !== undefined) {
+        console.log(`event stored, round trip ${Math.round(performance.now() - start)} ms`);
+        sentAt.delete(msg.clientEventId);
+      }
+      return;
+    }
+
     console.log("server says:", msg);
 
     if (msg.type === "command") {

@@ -92,6 +92,10 @@ wss.on("connection", (socket, req) => {
           "insert into events (session_id, type, payload, device_ts) values ($1, $2, $3, $4)",
           [msg.sessionId, msg.eventType, JSON.stringify(msg.payload ?? {}), msg.deviceTs]
         );
+
+        // Tell the daemon the event is safely stored, so it can time the round trip
+        socket.send(JSON.stringify({ type: "event_ack", clientEventId: msg.clientEventId }));
+
         if (msg.eventType === "task.finished") {
           await pool.query("update sessions set status = 'finished' where id = $1", [
             msg.sessionId,
