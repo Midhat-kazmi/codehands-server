@@ -1,0 +1,27 @@
+{
+  "name": "codehands-server",
+  "version": "1.0.0",
+     "type": "module",
+  "main": "index.js",
+    "scripts": {
+     "dev": "tsx watch src/server.ts",
+     "migrate": "tsx src/migrate.ts"
+   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^18.0.8",
+    "fastify": "^5.12.7",
+    "pg": "^8.23.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
