@@ -13,29 +13,59 @@ if (!deviceId || !token) {
 // When each event was sent (on this laptop's clock), keyed by event ID
 const sentAt = new Map<string, number>();
 
-// Pretend to run a task by sending fake events
-function runMockTask(ws: WebSocket, sessionId: string) {
-  const sendEvent = (eventType: string) => {
-    const clientEventId = crypto.randomUUID();
-    sentAt.set(clientEventId, performance.now());
-    console.log("sending event", eventType);
-    ws.send(
-      JSON.stringify({
-        type: "event",
-        sessionId,
-        eventType,
-        clientEventId,
-        payload: {},
-        deviceTs: new Date().toISOString(),
-      })
-    );
-  };
+// Running tasks, keyed by session ID
+type Task = { timers: NodeJS.Timeout[]; waiting: boolean };
+const tasks = new Map<string, Task>();
 
-  sendEvent("task.started");
-  setTimeout(() => sendEvent("step.plan"), 300);
-  setTimeout(() => sendEvent("step.implement"), 600);
-  setTimeout(() => sendEvent("step.test"), 900);
-  setTimeout(() => sendEvent("task.finished"), 1200);
+function sendEvent(ws: WebSocket, sessionId: string, eventType: string) {
+  const clientEventId = crypto.randomUUID();
+  sentAt.set(clientEventId, performance.now());
+  console.log("sending event", eventType);
+  ws.send(
+    JSON.stringify({
+      type: "event",
+      sessionId,
+      eventType,
+      clientEventId,
+      payload: {},
+      deviceTs: new Date().toISOString(),
+    })
+  );
+}
+
+function schedule(task: Task, ms: number, fn: () => void) {
+  task.timers.push(setTimeout(fn, ms));
+}
+
+function startTask(ws: WebSocket, sessionId: string) {
+  const task: Task = { timers: [], waiting: false };
+  tasks.set(sessionId, task);
+  sendEvent(ws, sessionId, "task.started");
+  schedule(task, 300, () => sendEvent(ws, sessionId, "step.plan"));
+  schedule(task, 600, () => sendEvent(ws, sessionId, "step.implement"));
+  schedule(task, 900, () => {
+    task.waiting = true;
+    sendEvent(ws, sessionId, "approval.requested");
+  });
+}
+
+function approveTask(ws: WebSocket, sessionId: string) {
+  const task = tasks.get(sessionId);
+  if (!task || !task.waiting) return console.log("nothing to approve for", sessionId);
+  task.waiting = false;
+  schedule(task, 300, () => sendEvent(ws, sessionId, "step.test"));
+  schedule(task, 600, () => {
+    sendEvent(ws, sessionId, "task.finished");
+    tasks.delete(sessionId);
+  });
+}
+
+function endTask(ws: WebSocket, sessionId: string, eventType: string) {
+  const task = tasks.get(sessionId);
+  if (!task) return console.log("no running task for", sessionId);
+  task.timers.forEach(clearTimeout);
+  tasks.delete(sessionId);
+  sendEvent(ws, sessionId, eventType);
 }
 
 function connect() {
@@ -60,7 +90,24 @@ function connect() {
 
     if (msg.type === "command") {
       ws.send(JSON.stringify({ type: "ack", commandId: msg.commandId }));
-      if (msg.commandType === "start") runMockTask(ws, msg.sessionId);
+      const sessionId: string = msg.sessionId ?? msg.payload?.sessionId;
+
+      switch (msg.commandType) {
+        case "start":
+          startTask(ws, sessionId);
+          break;
+        case "approve":
+          approveTask(ws, sessionId);
+          break;
+        case "reject":
+          endTask(ws, sessionId, "task.rejected");
+          break;
+        case "stop":
+          endTask(ws, sessionId, "task.stopped");
+          break;
+        default:
+          console.log("unknown command type:", msg.commandType);
+      }
     }
   });
 
